@@ -222,6 +222,22 @@ class Archive extends Contents
     /**
      * @return string|null
      */
+    public function getArchiveUrl(): ?string
+    {
+        return $this->archiveUrl;
+    }
+
+    /**
+     * @param string|null $archiveUrl
+     */
+    public function setArchiveUrl(?string $archiveUrl): void
+    {
+        $this->archiveUrl = $archiveUrl;
+    }
+
+    /**
+     * @return string|null
+     */
     public function getFeedType(): ?string
     {
         return $this->feedType;
@@ -543,6 +559,7 @@ class Archive extends Contents
         $this->feedAtomUrl = $this->options->feedAtomUrl;
         $this->keywords = $this->options->keywords;
         $this->description = $this->options->description;
+        $this->archiveUrl = $this->options->siteUrl;
 
         if (isset($handles[$this->parameter->type])) {
             $handle = $handles[$this->parameter->type];
@@ -1146,13 +1163,19 @@ class Archive extends Contents
      */
     public function feed()
     {
-        $this->feed->setSubTitle($this->description);
-        $this->feed->setFeedUrl($this->currentFeedUrl);
+        if ($this->feedType == Feed::RSS1) {
+            $feedUrl = $this->feedRssUrl;
+        } elseif ($this->feedType == Feed::ATOM1) {
+            $feedUrl = $this->feedAtomUrl;
+        } else {
+            $feedUrl = $this->feedUrl;
+        }
 
-        $this->feed->setBaseUrl(('/' == $this->request->feed || 0 == strlen($this->request->feed)
-            || '/comments' == $this->request->feed || '/comments/' == $this->request->feed) ?
-            $this->options->siteUrl : Common::url($this->request->feed, $this->options->index));
-        $this->feed->setFeedUrl($this->request->makeUriByRequest());
+        $this->checkPermalink($feedUrl);
+
+        $this->feed->setSubTitle($this->description);
+        $this->feed->setFeedUrl($feedUrl);
+        $this->feed->setBaseUrl($this->archiveUrl);
 
         if ($this->is('single') || 'comments' == $this->parameter->type) {
             $this->feed->setTitle(_t(
@@ -1286,27 +1309,29 @@ class Archive extends Contents
         }
     }
 
-    private function checkPermalink()
+    private function checkPermalink(?string $permalink = null)
     {
-        $type = $this->parameter->type;
+        if (!isset($permalink)) {
+            $type = $this->parameter->type;
 
-        if (
-            in_array($type, ['index', 'comment_page', 404])
-            || $this->makeSinglePageAsFrontPage    // 自定义首页不处理
-            || !$this->parameter->checkPermalink
-        ) { // 强制关闭
-            return;
-        }
+            if (
+                in_array($type, ['index', 'comment_page', 404])
+                || $this->makeSinglePageAsFrontPage    // 自定义首页不处理
+                || !$this->parameter->checkPermalink
+            ) { // 强制关闭
+                return;
+            }
 
-        if ($this->archiveSingle) {
-            $permalink = $this->permalink;
-        } else {
-            $value = array_merge($this->pageRow, [
-                'page' => $this->currentPage
-            ]);
+            if ($this->archiveSingle) {
+                $permalink = $this->permalink;
+            } else {
+                $value = array_merge($this->pageRow, [
+                    'page' => $this->currentPage
+                ]);
 
-            $path = Router::url($type, $value);
-            $permalink = Common::url($path, $this->options->index);
+                $path = Router::url($type, $value);
+                $permalink = Common::url($path, $this->options->index);
+            }
         }
 
         $requestUrl = $this->request->getRequestUrl();
@@ -1522,6 +1547,9 @@ class Archive extends Contents
         /** 设置归档缩略名 */
         $this->archiveSlug = ('post' == $this->type || 'attachment' == $this->type) ? $this->cid : $this->slug;
 
+        /** 设置归档地址 */
+        $this->archiveUrl = $this->permalink;
+
         /** 设置403头 */
         if ($this->hidden) {
             $this->response->setStatus(403);
@@ -1613,6 +1641,9 @@ class Archive extends Contents
         /** 设置归档缩略名 */
         $this->archiveSlug = $category['slug'];
 
+        /** 设置归档地址 */
+        $this->archiveUrl = $category['permalink'];
+
         /** 插件接口 */
         self::pluginHandle()->categoryHandle($this, $select);
     }
@@ -1682,6 +1713,9 @@ class Archive extends Contents
         /** 设置归档缩略名 */
         $this->archiveSlug = $tag['slug'];
 
+        /** 设置归档地址 */
+        $this->archiveUrl = $tag['permalink'];
+
         /** 插件接口 */
         self::pluginHandle()->tagHandle($this, $select);
     }
@@ -1737,6 +1771,9 @@ class Archive extends Contents
 
         /** 设置归档缩略名 */
         $this->archiveSlug = $author['uid'];
+
+        /** 设置归档地址 */
+        $this->archiveUrl = $author['permalink'];
 
         /** 插件接口 */
         self::pluginHandle()->authorHandle($this, $select);
@@ -1821,6 +1858,9 @@ class Archive extends Contents
         /** ATOM 1.0 */
         $this->feedAtomUrl = Router::url($currentRoute, $value, $this->options->feedAtomUrl);
 
+        /** 设置归档地址 */
+        $this->archiveUrl = Router::url($currentRoute, $value, $this->options->index);
+
         /** 插件接口 */
         self::pluginHandle()->dateHandle($this, $select);
     }
@@ -1880,6 +1920,9 @@ class Archive extends Contents
 
         /** 设置归档缩略名 */
         $this->archiveSlug = $keywords;
+
+        /** 设置归档地址 */
+        $this->archiveUrl = Router::url('search', ['keywords' => $keywords], $this->options->index);
 
         /** 插件接口 */
         self::pluginHandle()->searchHandle($this, $select);
